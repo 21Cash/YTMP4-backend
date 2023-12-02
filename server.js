@@ -16,11 +16,13 @@ function merge(video, audio, res, title) {
       "-map 0:v",
       "-map 1:a",
       "-c:v libx264",
-      "-crf 23",
-      "-preset veryfast",
+      "-crf 20",
+      "-preset fast",
+      "-profile:v high",
+      "-level 4.2",
       "-c:a aac",
+      "-b:a 128k",
       "-strict -2",
-      "-b:a 192k",
     ])
     .save(`${title}.mp4`)
     .on("end", () => {
