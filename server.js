@@ -84,9 +84,13 @@ app.get("/download", async (req, res) => {
 
     audioStream.pipe(fs.createWriteStream(mp3FilePath));
 
+    audioStream.on("end", () => {
+      console.log("Downloaded audio");
+      merge(mp4FilePath, mp3FilePath, videoTitle, res);
+    });
+
     videoStream.on("end", () => {
       console.log("Downloaded video");
-      merge(mp4FilePath, mp3FilePath, videoTitle, res);
     });
   } catch (error) {
     console.error("Download endpoint error:", error);
