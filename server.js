@@ -6,33 +6,53 @@ const port = process.env.PORT || 3000;
 const fs = require("fs");
 const ffmpeg = require("fluent-ffmpeg");
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+  })
+);
 
-function merge(video, audio, res, title) {
+app.get("/formats", async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      console.error("URL parameters are required");
+      return res
+        .status(400)
+        .json({ error: "URL and Quality parameters are required" });
+    }
+
+    console.log(`Fetching video info for ${url}`);
+    const videoID = ytdl.getURLVideoID(url);
+    let info = await ytdl.getInfo(videoID);
+
+    return res.status(200).send(info.formats);
+  } catch (err) {
+    console.error("Error fetching video info:", err);
+    return res.status(500).json({ error: "Error fetching video info" });
+  }
+});
+
+function merge(title, video, audio, res) {
+  console.log("Merging Started.");
   ffmpeg()
     .addInput(video)
     .addInput(audio)
-    .addOptions([
-      "-map 0:v",
-      "-map 1:a",
-      "-c:v libx264",
-      "-crf 23",
-      "-preset veryfast",
-      "-c:a aac",
-      "-strict -2",
-      "-b:a 192k",
-    ])
-    .save(`${title}.mp4`)
+    .addOptions(["-map 0:v", "-map 1:a", "-c:v copy", "-c:a aac"])
+    .save("merged.mp4")
     .on("end", () => {
-      console.log("Merging complete");
-      res.download(`${title}.mp4`, (err) => {
+      const fileName = `${title}.mp4`;
+      console.log("Merging complete.");
+      res.download("merged.mp4", fileName, (err) => {
         if (err) {
           console.error(err);
           res.status(500).json({ error: "Error downloading file" });
         }
+        // Cleanup: Delete temporary files
         fs.unlinkSync(video);
         fs.unlinkSync(audio);
-        fs.unlinkSync(`${title}.mp4`);
+        fs.unlinkSync("merged.mp4");
       });
     })
     .on("error", (err) => {
@@ -58,17 +78,18 @@ app.get("/download", async (req, res) => {
     const videoID = ytdl.getURLVideoID(url);
     let info = await ytdl.getInfo(videoID);
 
-    console.log(`Video title: ${info.videoDetails.title}`);
+    const videoTitle = info.videoDetails.title;
+    console.log(`Video title: ${videoTitle}`);
 
     const chosenFormat = info.formats.find(
-      (format) => format.qualityLabel === quality && format.container === "mp4"
+      (format) => format.qualityLabel === quality
     );
 
     if (!chosenFormat) {
       return res.status(404).json({ error: "Requested quality not found" });
     }
 
-    console.log(`Downloading video in ${quality}...`);
+    console.log(`Downloading video in ${chosenFormat.qualityLabel}...`);
     const videoStream = ytdl(url, {
       quality: chosenFormat.itag,
     });
@@ -83,15 +104,19 @@ app.get("/download", async (req, res) => {
       quality: "highestaudio",
     });
 
+    audioStream.on("end", () => {
+      console.log("Audio File Downloaded.");
+    });
+
     audioStream.pipe(fs.createWriteStream(mp3FilePath));
 
     videoStream.on("end", () => {
       console.log("Downloaded video");
-      merge(mp4FilePath, mp3FilePath, res, info.videoDetails.title);
+      merge(videoTitle, mp4FilePath, mp3FilePath, res);
     });
   } catch (err) {
-    console.error("Error downloading:", err);
-    res.status(500).json({ error: "Error downloading" });
+    console.error("Error downloading video:", err);
+    return res.status(500).json({ error: "Error downloading video" });
   }
 });
 
